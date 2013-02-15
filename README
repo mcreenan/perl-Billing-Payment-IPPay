@@ -1,387 +1,430 @@
-NAME
-    Billing::Payment::IPPay - IPPay Payment Provider
-
-SYNOPSIS
-        use Billing::Payment::IPPay;
-
-        # Create instance in test mode (uses ippay's test gateway)
-        my $ippay = Billing::Payment::IPPay->new(
-            test        => 1,
-            terminal_id => 'TESTTERMINAL',
-        );
-
-        # Enable debugging with a custom debug handler
-        my $ippay = Billing::Payment::IPPay->new(
-            test        => 1,
-            terminal_id => 'TESTTERMINAL',
-            debug       =>
-            debug_fn    => sub {
-                my ($level, $message) = @_;
-                printf "[%s] %s\n", $level, $message;
-            },
-        );
-
-DESCRIPTION
-    TODO
-
-METHODS
-  Constructor
-   Billing::Payment::IPPay->new( ... )
-    This class method accepts the following class parameters:
-
-    terminal_id
-        TerminalID value supplied by IPPay for your Merchant Account.
-
-    test
-        Use IPPay's test gateway.
-
-    debug
-        Enable debug information to be output or captured.
-
-        See debug_fn
-
-    debug_fn
-        A function that accepts 2 parameters: level, message.
-
-        If you pass this, any debug message is sent to this function instead
-        of printed to STDOUT.
-
-  Helper Methods
-    All helper methods return a hash with the following structure:
-
-        {
-            success    => 0|1,
-            http_code  => ...,    # HTTP Response Code from IPPay
-            error_code => ...,    # Only set if success = 0. Same as "ActionCode" value
-                                  #   in IPPay XML Response
-            error      => ...,    # Friendly error message if success = 0, usually
-                                  #   comes directly from IPPay
-            body       => ...,    # Raw HTTP request body (XML)
-            data       => { ... } # XML-parsed list of data returned by IPPay
-                                  #   Example keys:
-                                  #   ActionCode
-                                  #   ResultText
-                                  #   ErrMsg
-        }
-
-   authonly
-    Submits an authorization only (AUTHONLY) transaction.
-
-   Required Fields
-    CardNum
-        16 digit credit card number.
-
-    CardExpMonth
-        2 digit expiration month.
-
-    CardExpYear
-        2 digit expiration year.
-
-    TotalAmount
-        Total amount to authorize, as a decimal value (e.g. 12.99).
-
-   Usage
-        my $response = $ippay->authonly(
-            {
-                CardNum      => '4000300020001000',
-                CardExpMonth => '11',
-                CardExpYear  => '14',
-                TotalAmount  => 49.00,
-            }
-        );
-
-        $response->{success}
-          ? printf "OK (Transaction ID: %s)", $response->{data}->{TransactionID}
-          : printf "FAILED (%s)", $response->{error};
-
-   capture
-    Submits a capture (CAPT) transaction, which captures a previous
-    authorization request.
-
-   Required Fields
-    TransactionID
-        Transaction ID from previous authonly transaction.
-
-   Usage
-        my $response = $ippay->capture(
-            {
-                TransactionID => '<Transaction ID>',
-            }
-        );
-
-        $response->{success}
-          ? printf "OK"
-          : printf "FAILED (%s)", $response->{error};
-
-   credit
-    Issue a credit to refund a previous transaction.
-
-   Required Fields
-    TransactionID
-        Transaction ID from previous capture or sale transaction.
-
-   Usage
-        my $response = $ippay->credit(
-            {
-                TransactionID => '<Transaction ID>',
-            }
-        );
-
-        $response->{success}
-          ? printf "OK"
-          : printf "FAILED (%s)", $response->{error};
-
-   check
-    Charge a checking or savings account.
-
-   Required Fields
-    CardName
-        Name for the account.
-
-    TotalAmount
-        Total amount to be charged, as a decimal dollar value (e.g. 14.95).
-
-    FeeAmount
-        Fee to charge for use of checking or savings account.
-
-        Note: This charge is on top of the TotalAmount value. If you specify
-        14.95 for TotalAmount and 1.00 for FeeAmount, the account is charged
-        15.95 in total.
-
-    ACH Hash containing information about the checking or savings account.
-
-        Type (required)
-                CHECKING or SAVINGS
-
-        AccountNumber (required)
-                Account number for the checking or savings account to be
-                charged.
-
-        ABA (required)
-                Routing number associated with the checking or savings
-                account to be charged.
-
-                Defaults to 0.
-
-        Tokenize
-                Whether or not to create and return a token associated with
-                the checking or savings account. If enabled, a *TokenID*
-                field will be returned in the response.
-
-        SEC     Type of security to use
-
-        CheckNumber
-                Number on a check if checking account.
-
-   Usage
-        my $response = $ippay->check(
-            {
-                CardName    => 'Test Card',
-                TotalAmount => 49.00,
-                FeeAmount   => 1.00,
-                ACH         => {
-                    Type          => 'SAVINGS',
-                    Tokenize      => 'true',
-                    SEC           => 'PPD',
-                    AccountNumber => '11111999',
-                    ABA           => '071025661',
-                    CheckNumber   => '15',
-                },
-                'IndustryInfo' => {
-                    'Type' => 'ECOMMERCE',
-                },
-            }
-        );
-
-        $response->{success}
-          ? printf "OK"
-          : printf "FAILED (%s)", $response->{error};
-
-   enq
-    Request information about a previous transaction.
-
-   Required Fields
-    TransactionID
-        transaction id from previous capture or sale transaction.
-
-   Usage
-        use Data::Dumper;
-
-        my $response = $ippay->enq(
-            {
-                TransactionID => '<transaction id>',
-            }
-        );
-
-        $response->{success}
-          ? printf "Ok", dumper($response->{data})
-          : printf "Failed (%s)", $response->{error};
-
-   ping
-    Transaction simply to verify the IPPay service is responsive
-
-   Usage
-        my $response = $ippay->ping;
-        $response->{success}
-          ? printf "Ok", $response->{data}->{ResponseText}
-          : printf "Failed (%s)", $response->{error};
-
-   reversal
-    Reverses a previous CHECK transaction
-
-   Required Fields
-    TransactionID
-        Transaction id from previous capture or sale transaction.
-
-   Usage
-        my $response = $ippay->reversal(
-            {
-                TransactionID => '<transaction id>',
-            }
-        );
-
-        $response->{success}
-          ? printf "Ok"
-          : printf "Failed (%s)", $response->{error};
-
-   sale
-    Equivalent to submitted an authorization (AUTHONLY) and capture (CAPT)
-    transaction.
-
-   Required Fields
-    CardNum
-        16 digit credit card number.
-
-    CardExpMonth
-        2 digit expiration month.
-
-    CardExpYear
-        2 digit expiration year.
-
-    TotalAmount
-        Total amount to authorize, as a decimal value (e.g. 12.99).
-
-   Usage
-        my $response = $ippay->sale(
-            {
-                CardNum      => '4000300020001000',
-                CardExpMonth => '11',
-                CardExpYear  => '14',
-                TotalAmount  => 49.00,
-            }
-        );
-
-        $response->{success}
-          ? printf "OK (Transaction ID: %s)", $response->{data}->{TransactionID}
-          : printf "FAILED (%s)", $response->{error};
-
-   tokenize
-    Create a unique Token idenfier that can be used in later transactions in
-    place of a credit card number or checking/savings account
-
-   Required Fields
-    CardNum
-        16 digit credit card number.
-
-    CardExpMonth
-        2 digit expiration month.
-
-    CardExpYear
-        2 digit expiration year.
-
-   Usage
-        my $response = $ippay->tokenize(
-            {
-                CardNum      => '4000300020001000',
-                CardExpMonth => '11',
-                CardExpYear  => '14',
-            }
-        );
-
-        $response->{success}
-          ? printf "OK (Token ID: %s)", $response->{data}->{TokenID}
-          : printf "FAILED (%s)", $response->{error};
-
-   void
-    Voids a credit card transaction before it has been settled (e.g. Card
-    has been authorized but not captured yet)
-
-   Required Fields
-    TransactionID
-        Transaction id from previous capture or sale transaction.
-
-    TotalAmount
-        The amount authorized in the transaction being voided
-
-   Usage
-        my $response = $ippay->void(
-            {
-                TransactionID => '<transaction id>',
-                TotalAmount   => 14.95,
-            }
-        );
-
-        $response->{success}
-          ? printf "Ok"
-          : printf "Failed (%s)", $response->{error};
-
-   voidach
-    Voids a previous check transaction before it has been settled
-
-    This transactions requires and accepts all the same fields as the
-    previous check transaction.
-
-   Usage
-        my $response = $ippay->voidach(
-            {
-                CardName    => 'Test Card',
-                TotalAmount => 49.00,
-                FeeAmount   => 1.00,
-                ACH         => {
-                    Type          => 'SAVINGS',
-                    Tokenize      => 'true',
-                    SEC           => 'PPD',
-                    AccountNumber => '11111999',
-                    ABA           => '071025661',
-                    CheckNumber   => '15',
-                },
-                'IndustryInfo' => {
-                    'Type' => 'ECOMMERCE',
-                },
-            }
-        );
-
-        $response->{success}
-          ? printf "Ok"
-          : printf "Failed (%s)", $response->{error};
-
-  Other Methods
-   submit_transaction
-    Submit a raw transaction to the IPPay API. It is recommended that you
-    use the various helper methods instead.
-
-NOTE
-  Unimplemented Transactions
-    ACK
-    FORCE
-    REVERSEAUTH
-
-COMPATIBILITY
-    Compatible with IPPay's XML Product Specification v1.1.6 (Apr 30 2012)
-
-COPYRIGHT
-    Copyright 2013 Matt Creenan
-
-    This package is free software. You may redistribute it or modify it
-    under Vthe same terms as Perl itself.
-
-AUTHORS
-    Matt Creenan <mattcreenan@gmail.com>
-
-SEE ALSO
-    <http://www.ippay.com/downloads/IPPay_Reference_Manual.pdf>
-    IPPay XML Product Specification v1.1.6 (no link available)
-    IPPay XML Feature Description for ACH Processing v1.3 (no link
-    available)
-    IPPay Test System and Back-end Simulators v1.3 (no link available)
+Billing::Payment::IPPayU(s3e)r Contributed Perl DocumentaBtiilolning::Payment::IPPay(3)
 
+
+
+NNAAMMEE
+       Billing::Payment::IPPay - IPPay Payment Provider
+
+SSYYNNOOPPSSIISS
+           use Billing::Payment::IPPay;
+
+           # Create instance in test mode (uses ippay's test gateway)
+           my $ippay = Billing::Payment::IPPay->new(
+               test        => 1,
+               terminal_id => 'TESTTERMINAL',
+           );
+
+           # Enable debugging with a custom debug handler
+           my $ippay = Billing::Payment::IPPay->new(
+               test        => 1,
+               terminal_id => 'TESTTERMINAL',
+               debug       => 1,
+               debug_fn    => sub {
+                   my ($level, $message) = @_;
+                   printf "[%s] %s\n", $level, $message;
+               },
+           );
+
+DDEESSCCRRIIPPTTIIOONN
+       Light wrapper around the IPPay REST/XML API
+
+       Provides methods for each Transaction Type as well as building the
+       request XML payload and parsing the response XML payload.
+
+MMEETTHHOODDSS
+   CCoonnssttrruuccttoorr
+       _B_i_l_l_i_n_g_:_:_P_a_y_m_e_n_t_:_:_I_P_P_a_y_-_>_n_e_w_( _._._. _)
+
+       This class method accepts the following class parameters:
+
+       terminal_id
+           TerminalID value supplied by IPPay for your Merchant Account.
+
+       test
+           Use IPPay's test gateway.
+
+       debug
+           Enable debug information to be output or captured.
+
+           See debug_fn
+
+       debug_fn
+           A function that accepts 2 parameters: level, message.
+
+           If you pass this, any debug message is sent to this function
+           instead of printed to STDOUT.
+
+   HHeellppeerr MMeetthhooddss
+       All helper methods return a hash with the following structure:
+
+           {
+               success    => 0|1,
+               http_code  => ...,    # HTTP Response Code from IPPay
+               error_code => ...,    # Only set if success = 0. Same as "ActionCode" value
+                                     #   in IPPay XML Response
+               error      => ...,    # Friendly error message if success = 0, usually
+                                     #   comes directly from IPPay
+               body       => ...,    # Raw HTTP request body (XML)
+               data       => { ... } # XML-parsed list of data returned by IPPay
+                                     #   Example keys:
+                                     #   ActionCode
+                                     #   ResultText
+                                     #   ErrMsg
+           }
+
+       _a_u_t_h_o_n_l_y
+
+       Submits an authorization only (AUTHONLY) transaction.
+
+       Required Fields
+
+       CardNum
+           16 digit credit card number.
+
+       CardExpMonth
+           2 digit expiration month.
+
+       CardExpYear
+           2 digit expiration year.
+
+       TotalAmount
+           Total amount to authorize, as a decimal value (e.g. 12.99).
+
+       Usage
+
+           my $response = $ippay->authonly(
+               {
+                   CardNum      => '4000300020001000',
+                   CardExpMonth => '11',
+                   CardExpYear  => '14',
+                   TotalAmount  => 49.00,
+               }
+           );
+
+           $response->{success}
+             ? printf "OK (Transaction ID: %s)", $response->{data}->{TransactionID}
+             : printf "FAILED (%s)", $response->{error};
+
+       _c_a_p_t_u_r_e
+
+       Submits a capture (CAPT) transaction, which captures a previous
+       authorization request.
+
+       Required Fields
+
+       TransactionID
+           Transaction ID from previous authonly transaction.
+
+       Usage
+
+           my $response = $ippay->capture(
+               {
+                   TransactionID => '<Transaction ID>',
+               }
+           );
+
+           $response->{success}
+             ? printf "OK"
+             : printf "FAILED (%s)", $response->{error};
+
+       _c_r_e_d_i_t
+
+       Issue a credit to refund a previous transaction.
+
+       Required Fields
+
+       TransactionID
+           Transaction ID from previous capture or sale transaction.
+
+       Usage
+
+           my $response = $ippay->credit(
+               {
+                   TransactionID => '<Transaction ID>',
+               }
+           );
+
+           $response->{success}
+             ? printf "OK"
+             : printf "FAILED (%s)", $response->{error};
+
+       _c_h_e_c_k
+
+       Charge a checking or savings account.
+
+       Required Fields
+
+       CardName
+           Name for the account.
+
+       TotalAmount
+           Total amount to be charged, as a decimal dollar value (e.g. 14.95).
+
+       FeeAmount
+           Fee to charge for use of checking or savings account.
+
+           NNoottee: This charge is oonn ttoopp ooff the TotalAmount value. If you
+           specify 14.95 for TotalAmount and 1.00 for FeeAmount, the account
+           is charged 15.95 in total.
+
+       ACH Hash containing information about the checking or savings account.
+
+           Type (required)
+                   CHECKING or SAVINGS
+
+           AccountNumber (required)
+                   Account number for the checking or savings account to be
+                   charged.
+
+           ABA (required)
+                   Routing number associated with the checking or savings
+                   account to be charged.
+
+                   Defaults to 0.
+
+           Tokenize
+                   Whether or not to create and return a token associated with
+                   the checking or savings account. If enabled, a _T_o_k_e_n_I_D
+                   field will be returned in the response.
+
+           SEC     Type of security to use
+
+           CheckNumber
+                   Number on a check if checking account.
+
+       Usage
+
+           my $response = $ippay->check(
+               {
+                   CardName    => 'Test Card',
+                   TotalAmount => 49.00,
+                   FeeAmount   => 1.00,
+                   ACH         => {
+                       Type          => 'SAVINGS',
+                       Tokenize      => 'true',
+                       SEC           => 'PPD',
+                       AccountNumber => '11111999',
+                       ABA           => '071025661',
+                       CheckNumber   => '15',
+                   },
+                   'IndustryInfo' => {
+                       'Type' => 'ECOMMERCE',
+                   },
+               }
+           );
+
+           $response->{success}
+             ? printf "OK"
+             : printf "FAILED (%s)", $response->{error};
+
+       _e_n_q
+
+       Request information about a previous transaction.
+
+       Required Fields
+
+       TransactionID
+           transaction id from previous capture or sale transaction.
+
+       Usage
+
+           use Data::Dumper;
+
+           my $response = $ippay->enq(
+               {
+                   TransactionID => '<transaction id>',
+               }
+           );
+
+           $response->{success}
+             ? printf "Ok", dumper($response->{data})
+             : printf "Failed (%s)", $response->{error};
+
+       _p_i_n_g
+
+       Transaction simply to verify the IPPay service is responsive
+
+       Usage
+
+           my $response = $ippay->ping;
+           $response->{success}
+             ? printf "Ok", $response->{data}->{ResponseText}
+             : printf "Failed (%s)", $response->{error};
+
+       _r_e_v_e_r_s_a_l
+
+       Reverses a previous CHECK transaction
+
+       Required Fields
+
+       TransactionID
+           Transaction id from previous capture or sale transaction.
+
+       Usage
+
+           my $response = $ippay->reversal(
+               {
+                   TransactionID => '<transaction id>',
+               }
+           );
+
+           $response->{success}
+             ? printf "Ok"
+             : printf "Failed (%s)", $response->{error};
+
+       _s_a_l_e
+
+       Equivalent to submitted an authorization (AUTHONLY) and capture (CAPT)
+       transaction.
+
+       Required Fields
+
+       CardNum
+           16 digit credit card number.
+
+       CardExpMonth
+           2 digit expiration month.
+
+       CardExpYear
+           2 digit expiration year.
+
+       TotalAmount
+           Total amount to authorize, as a decimal value (e.g. 12.99).
+
+       Usage
+
+           my $response = $ippay->sale(
+               {
+                   CardNum      => '4000300020001000',
+                   CardExpMonth => '11',
+                   CardExpYear  => '14',
+                   TotalAmount  => 49.00,
+               }
+           );
+
+           $response->{success}
+             ? printf "OK (Transaction ID: %s)", $response->{data}->{TransactionID}
+             : printf "FAILED (%s)", $response->{error};
+
+       _t_o_k_e_n_i_z_e
+
+       Create a unique Token idenfier that can be used in later transactions
+       in place of a credit card number or checking/savings account
+
+       Required Fields
+
+       CardNum
+           16 digit credit card number.
+
+       CardExpMonth
+           2 digit expiration month.
+
+       CardExpYear
+           2 digit expiration year.
+
+       Usage
+
+           my $response = $ippay->tokenize(
+               {
+                   CardNum      => '4000300020001000',
+                   CardExpMonth => '11',
+                   CardExpYear  => '14',
+               }
+           );
+
+           $response->{success}
+             ? printf "OK (Token ID: %s)", $response->{data}->{TokenID}
+             : printf "FAILED (%s)", $response->{error};
+
+       _v_o_i_d
+
+       Voids a credit card transaction before it has been settled (e.g. Card
+       has been authorized but not captured yet)
+
+       Required Fields
+
+       TransactionID
+           Transaction id from previous capture or sale transaction.
+
+       TotalAmount
+           The amount authorized in the transaction being voided
+
+       Usage
+
+           my $response = $ippay->void(
+               {
+                   TransactionID => '<transaction id>',
+                   TotalAmount   => 14.95,
+               }
+           );
+
+           $response->{success}
+             ? printf "Ok"
+             : printf "Failed (%s)", $response->{error};
+
+       _v_o_i_d_a_c_h
+
+       Voids a previous check transaction before it has been settled
+
+       This transactions requires and accepts all the same fields as the
+       previous check transaction.
+
+       Usage
+
+           my $response = $ippay->voidach(
+               {
+                   CardName    => 'Test Card',
+                   TotalAmount => 49.00,
+                   FeeAmount   => 1.00,
+                   ACH         => {
+                       Type          => 'SAVINGS',
+                       Tokenize      => 'true',
+                       SEC           => 'PPD',
+                       AccountNumber => '11111999',
+                       ABA           => '071025661',
+                       CheckNumber   => '15',
+                   },
+                   'IndustryInfo' => {
+                       'Type' => 'ECOMMERCE',
+                   },
+               }
+           );
+
+           $response->{success}
+             ? printf "Ok"
+             : printf "Failed (%s)", $response->{error};
+
+   OOtthheerr MMeetthhooddss
+       _s_u_b_m_i_t___t_r_a_n_s_a_c_t_i_o_n
+
+       Submit a raw transaction to the IPPay API. It is rreeccoommmmeennddeedd that you
+       use the various helper methods instead.
+
+NNOOTTEE
+   UUnniimmpplleemmeenntteedd TTrraannssaaccttiioonnss
+       ACK
+       FORCE
+       REVERSEAUTH
+
+CCOOMMPPAATTIIBBIILLIITTYY
+       Compatible with IPPay's XML Product Specification v1.1.6 (Apr 30 2012)
+
+CCOOPPYYRRIIGGHHTT
+       Copyright 2013 Matt Creenan
+
+       This package is free software. You may redistribute it or modify it
+       under the same terms as Perl itself.
+
+AAUUTTHHOORRSS
+       Matt Creenan <mattcreenan@gmail.com>
+
+SSEEEE AALLSSOO
+       <http://www.ippay.com/downloads/IPPay_Reference_Manual.pdf>
+       IPPay XML Product Specification v1.1.6 (no link available)
+       IPPay XML Feature Description for ACH Processing v1.3 (no link
+       available)
+       IPPay Test System and Back-end Simulators v1.3 (no link available)
+
+
+
+perl v5.14.2                      2013-02-15        Billing::Payment::IPPay(3)

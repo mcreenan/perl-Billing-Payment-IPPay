@@ -492,7 +492,7 @@ Billing::Payment::IPPay - IPPay Payment Provider
     my $ippay = Billing::Payment::IPPay->new(
         test        => 1,
         terminal_id => 'TESTTERMINAL',
-        debug       =>
+        debug       => 1,
         debug_fn    => sub {
             my ($level, $message) = @_;
             printf "[%s] %s\n", $level, $message;
@@ -501,7 +501,10 @@ Billing::Payment::IPPay - IPPay Payment Provider
 
 =head1 DESCRIPTION
 
-TODO
+Light wrapper around the IPPay REST/XML API
+
+Provides methods for each Transaction Type as well as building the request XML payload
+and parsing the response XML payload.
 
 =head1 METHODS
 
@@ -976,7 +979,7 @@ Compatible with IPPay's XML Product Specification v1.1.6 (Apr 30 2012)
 Copyright 2013 Matt Creenan
 
 This package is free software. You may redistribute it or modify it under
-Vthe same terms as Perl itself.
+the same terms as Perl itself.
 
 =head1 AUTHORS
 
